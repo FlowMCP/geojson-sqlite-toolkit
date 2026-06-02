@@ -1,0 +1,14 @@
+node_modules/
+coverage/
+.DS_Store
+*.db
+*.db.new
+*.db-shm
+*.db-wal
+*.log
+tests/manual/data/
+
+# Synthetic GeoJSON fixture build artifact (explicit for readability;
+# already covered by the global *.db pattern above). The GeoJSON in source/
+# is tracked (CC0).
+tests/fixtures/synthetic-geojson/synthetic-geojson.db

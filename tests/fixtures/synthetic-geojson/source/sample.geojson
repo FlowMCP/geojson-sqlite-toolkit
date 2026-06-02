@@ -1,0 +1,38 @@
+{
+    "type": "FeatureCollection",
+    "features": [
+        {
+            "type": "Feature",
+            "geometry": { "type": "Point", "coordinates": [ 10.0, 50.0 ] },
+            "properties": { "name": "Alpha Marker", "category": "poi" }
+        },
+        {
+            "type": "Feature",
+            "geometry": { "type": "Point", "coordinates": [ 10.01, 50.01 ] },
+            "properties": { "name": "Beta Marker", "category": "poi" }
+        },
+        {
+            "type": "Feature",
+            "geometry": { "type": "Point", "coordinates": [ 20.0, 60.0 ] },
+            "properties": { "name": "Far Marker", "category": "remote" }
+        },
+        {
+            "type": "Feature",
+            "geometry": {
+                "type": "LineString",
+                "coordinates": [ [ 10.0, 50.0 ], [ 10.02, 50.02 ], [ 10.04, 50.04 ] ]
+            },
+            "properties": { "name": "Sample Path", "category": "route" }
+        },
+        {
+            "type": "Feature",
+            "geometry": {
+                "type": "Polygon",
+                "coordinates": [
+                    [ [ 10.0, 50.0 ], [ 10.1, 50.0 ], [ 10.1, 50.1 ], [ 10.0, 50.1 ], [ 10.0, 50.0 ] ]
+                ]
+            },
+            "properties": { "name": "Sample Area", "category": "zone" }
+        }
+    ]
+}
