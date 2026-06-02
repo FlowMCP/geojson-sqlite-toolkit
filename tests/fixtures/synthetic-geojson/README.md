@@ -1,6 +1,6 @@
 # Synthetic Mini-GeoJSON Fixture (CC0)
 
-A fully fictional GeoJSON FeatureCollection (RFC 7946) used for reproducible tests of the `geojson-sqlite-toolkit` and its FlowMCP integration. No real-world geodata is included.
+A fully fictional GeoJSON FeatureCollection (RFC 7946) used for reproducible tests of the `geojson-sqlite-toolkit` and its FlowMCP integration. In URL mode (Memo 096) the file is served through a stubbed `fetch` and parsed into memory — there is no SQLite build artifact. No real-world geodata is included.
 
 ## Purpose
 
@@ -18,23 +18,19 @@ The single source file in `source/sample.geojson` is an original synthetic work.
 synthetic-geojson/
 ├── LICENSE                 CC0 1.0 Universal legal text
 ├── README.md               this file
-├── build-fixture.mjs       builds synthetic-geojson.db from source/
-├── source/
-│   └── sample.geojson      5 fictional features (3 Point, 1 LineString, 1 Polygon)
-└── synthetic-geojson.db    build artifact, gitignored
+└── source/
+    └── sample.geojson      5 fictional features (3 Point, 1 LineString, 1 Polygon)
 ```
 
-## Building
+## Usage
 
-```bash
-node tests/fixtures/synthetic-geojson/build-fixture.mjs
-```
-
-The script reads `source/sample.geojson`, converts it via `GeojsonSqliteConverter`, and writes `synthetic-geojson.db` next to itself.
+`source/sample.geojson` is read by the test suites and the manual runner
+(`tests/manual/run-all.mjs`), served through a stubbed `fetch`, and parsed into
+memory via `GeojsonUrlStore.loadFromUrl`. No on-disk database is produced.
 
 ## Capabilities
 
-The resulting database activates these `GeojsonCapabilityDetector` booleans:
+The loaded collection activates these `GeojsonCapabilityDetector` booleans:
 
 | Capability | State | Reason |
 |------------|-------|--------|
@@ -47,10 +43,9 @@ The resulting database activates these `GeojsonCapabilityDetector` booleans:
 
 ## Representative-point rule
 
-The converter reduces non-Point geometries to a single representative point
-(NO SILENT DEFAULT). The applied rule is stored per row in
-`features.representative_rule` and the full mapping is stored in
-`meta.representativePointRules`:
+`GeometryReducer` reduces non-Point geometries to a single representative point
+(NO SILENT DEFAULT). The applied rule is recorded per row in
+`representative_rule`:
 
 | Geometry | Representative point |
 |----------|----------------------|
@@ -67,7 +62,6 @@ The bounding box always spans every coordinate of the geometry, so
 ## Repository policy
 
 - `source/sample.geojson` is **tracked** (original CC0 work).
-- `synthetic-geojson.db` is **gitignored** (rebuilt on demand).
-- WAL artifacts (`*.db-shm`, `*.db-wal`) are gitignored via the global `*.db` pattern.
+- No build artifacts are produced (URL mode is in-memory).
 
-For real datasets, keep user-provided data outside the repository at `${FLOWMCP_RESOURCES}/`.
+For real datasets, host the file at an HTTPS URL the schema references — never commit third-party geodata.

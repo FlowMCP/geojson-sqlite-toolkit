@@ -1,58 +1,53 @@
-import { SqliteBuilder } from '../shared/SqliteBuilder.mjs'
-import { MetaWriter } from '../shared/MetaWriter.mjs'
-import { GeojsonMetadataSchema } from '../converters/geojson/GeojsonMetadataSchema.mjs'
+import { GeojsonUrlStore } from '../converters/geojson/GeojsonUrlStore.mjs'
 import { GeojsonDefaultMethods } from '../converters/geojson/GeojsonDefaultMethods.mjs'
 
 
+//
+// FlowMcpAdapter (URL mode — Memo 096)
+// ------------------------------------
+// Consumer API for FlowMCP-CLI. The former file-based / seal path is gone.
+// The CLI now: (1) loadFromUrl — fetch+parse+validate-on-load+in-memory,
+// (2) buildToolDefinitions — derive auto-tools from in-memory capabilities,
+// (3) at runtime calls the GeojsonDefaultMethods directly (keyed by url).
+//
 export class FlowMcpAdapter {
-    static verifySeal( { dbPath } ) {
-        const { status, messages } = FlowMcpAdapter.#validationVerifySeal( { dbPath } )
+    static async loadFromUrl( { url } ) {
+        const { status, messages } = FlowMcpAdapter.#validationUrl( { url } )
         if( !status ) { throw new Error( messages.join( '; ' ) ) }
 
-        let db = null
-        try {
-            const opened = SqliteBuilder.openDatabase( { dbPath } )
-            db = opened.db
-        } catch( e ) {
-            return { sealed: false, meta: null, reason: 'DB_UNREADABLE' }
-        }
-
-        try {
-            const hasMetaRow = db
-                .prepare( "SELECT name FROM sqlite_master WHERE type='table' AND name='meta'" )
-                .get()
-            if( !hasMetaRow ) {
-                return { sealed: false, meta: null, reason: 'NO_META' }
-            }
-
-            const raw = MetaWriter.readMeta( { db } )
-            if( raw.qualitySeal !== 'sqlite-geojson' ) {
-                return { sealed: false, meta: null, reason: 'NO_SEAL' }
-            }
-
-            return { sealed: true, meta: raw }
-        } finally {
-            try { db.close() } catch( e ) { /* ignore */ }
-        }
+        const { capabilities, recordCount, fromCache } = await GeojsonUrlStore.loadFromUrl( { url } )
+        return { loaded: true, url, capabilities, recordCount, fromCache }
     }
 
 
-    static getAvailableMethods( { dbPath } ) {
-        const { status, messages } = FlowMcpAdapter.#validationGetAvailableMethods( { dbPath } )
+    static executeMethod( { url, method, params = {} } ) {
+        const { status, messages } = FlowMcpAdapter.#validationUrl( { url } )
         if( !status ) { throw new Error( messages.join( '; ' ) ) }
 
-        const meta = GeojsonMetadataSchema.parseMeta( { dbPath } )
-        const capabilities = GeojsonMetadataSchema.parseCapabilities( { metaTable: meta } ) || {}
+        const fn = GeojsonDefaultMethods[ method ]
+        const known = [ 'featuresInBBox', 'nearPoint', 'byType' ]
+        if( !known.includes( method ) || typeof fn !== 'function' ) {
+            throw new Error( `Unknown method: ${method}` )
+        }
+        return fn( { url, ...params } )
+    }
+
+
+    static getAvailableMethods( { url } ) {
+        const { status, messages } = FlowMcpAdapter.#validationUrl( { url } )
+        if( !status ) { throw new Error( messages.join( '; ' ) ) }
+
+        const { capabilities } = GeojsonUrlStore.getCapabilities( { url } )
         const methods = GeojsonDefaultMethods.getMethodsForCapabilities( { capabilities } )
         return { methods, capabilities }
     }
 
 
-    static buildToolDefinitions( { dbPath, namespace } ) {
-        const { status, messages } = FlowMcpAdapter.#validationBuildToolDefinitions( { dbPath, namespace } )
+    static buildToolDefinitions( { url, namespace } ) {
+        const { status, messages } = FlowMcpAdapter.#validationBuildToolDefinitions( { url, namespace } )
         if( !status ) { throw new Error( messages.join( '; ' ) ) }
 
-        const { methods } = FlowMcpAdapter.getAvailableMethods( { dbPath } )
+        const { methods } = FlowMcpAdapter.getAvailableMethods( { url } )
 
         const tools = methods
             .map( ( method ) => {
@@ -79,25 +74,25 @@ export class FlowMcpAdapter {
                     },
                     outputSchema: method.outputSchema,
                     requiresCapabilities: method.requiresCapabilities,
-                    sqlTemplate: method.sqlTemplate
+                    method: method.name
                 }
             } )
         return { tools }
     }
 
 
-    static #validationVerifySeal( { dbPath } ) {
+    static #validationUrl( { url } ) {
         const struct = { status: false, messages: [] }
-        if( dbPath === undefined || dbPath === null ) {
-            struct.messages.push( 'dbPath is required' )
+        if( url === undefined || url === null ) {
+            struct.messages.push( 'url is required' )
             return struct
         }
-        if( typeof dbPath !== 'string' ) {
-            struct.messages.push( 'dbPath must be a string' )
+        if( typeof url !== 'string' ) {
+            struct.messages.push( 'url must be a string' )
             return struct
         }
-        if( dbPath.length === 0 ) {
-            struct.messages.push( 'dbPath must not be empty' )
+        if( url.length === 0 ) {
+            struct.messages.push( 'url must not be empty' )
             return struct
         }
         struct.status = true
@@ -105,29 +100,10 @@ export class FlowMcpAdapter {
     }
 
 
-    static #validationGetAvailableMethods( { dbPath } ) {
-        const struct = { status: false, messages: [] }
-        if( dbPath === undefined || dbPath === null ) {
-            struct.messages.push( 'dbPath is required' )
-            return struct
-        }
-        if( typeof dbPath !== 'string' ) {
-            struct.messages.push( 'dbPath must be a string' )
-            return struct
-        }
-        if( dbPath.length === 0 ) {
-            struct.messages.push( 'dbPath must not be empty' )
-            return struct
-        }
-        struct.status = true
-        return struct
-    }
-
-
-    static #validationBuildToolDefinitions( { dbPath, namespace } ) {
+    static #validationBuildToolDefinitions( { url, namespace } ) {
         const struct = { status: false, messages: [] }
         const fields = [
-            [ 'dbPath',    dbPath,    'string', null ],
+            [ 'url',       url,       'string', null ],
             [ 'namespace', namespace, 'string', /^[a-z][a-z0-9-]*$/ ]
         ]
         fields

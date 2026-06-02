@@ -1,10 +1,18 @@
 # geojson-sqlite-toolkit
 
-Convert GeoJSON FeatureCollections (RFC 7946) into queryable, quality-sealed SQLite databases, and expose reusable spatial queries as FlowMCP auto-tools.
+Load GeoJSON FeatureCollections (RFC 7946) from a URL into memory and expose
+reusable spatial queries as FlowMCP auto-tools. There is **no SQLite file** and
+**no file seal** — the complete file is fetched in a single request, validated
+on load, and held in memory (Memo 096 URL model).
 
-This is a **file add-on** in the FlowMCP ecosystem, mirroring the structure of [`gtfs-sqlite-toolkit`](https://github.com/FlowMCP/gtfs-sqlite-toolkit). It is **not** a generic loader inside `flowmcp-core` — it is a standalone repo: own converter, own sealed SQLite, auto-inject via `FlowMcpAdapter`.
+GeoJSON is **self-describing** (RFC 7946: `FeatureCollection.features[]`,
+geometry as `[lon, lat]`, free-form `properties`), so — unlike a CSV add-on —
+this toolkit needs **no parse config**. You point it at a URL; the shape is
+already known.
 
-GeoJSON is self-describing (RFC 7946: `FeatureCollection.features[]`, geometry as `[lon, lat]`, free-form `properties`), so the converter needs **minimal configuration** — no column or separator hints like a CSV add-on would.
+This is a sibling of [`csv-tsv-sqlite-toolkit`](https://github.com/FlowMCP/csv-tsv-sqlite-toolkit)
+and follows the same FlowMCP add-on pattern (own repo → thin URL schema →
+in-memory load → auto-inject via `FlowMcpAdapter`).
 
 ## Install
 
@@ -14,33 +22,35 @@ This package is not published to npm. Use it via GitHub:
 npm install github:FlowMCP/geojson-sqlite-toolkit
 ```
 
-`better-sqlite3` is a **peer dependency** (you provide it in the consuming project).
+No native dependencies — the load path uses the global `fetch` and a pure-JS
+validator. (`better-sqlite3` is no longer required; the seal/file path was
+removed in the URL model.)
 
-## Convert
+## Load
 
 ```javascript
-import { GeojsonSqliteConverter } from 'geojson-sqlite-toolkit'
+import { GeojsonUrlStore } from 'geojson-sqlite-toolkit'
 
-const result = await GeojsonSqliteConverter.start( {
-    input: '/path/to/features.geojson',
-    inputType: 'geojson',          // 'geojson' | 'json' | 'folder' | 'buffer' | 'auto'
-    dbPath: '/path/to/features.db',
-    force: false,                  // true = build DB even on validation errors (no seal)
-    sourceUrl: 'https://example.org/features.geojson'
+const result = await GeojsonUrlStore.loadFromUrl( {
+    url: 'https://example.org/features.geojson'   // HTTPS only
 } )
 
-// result.status, result.seal ('sqlite-geojson' | null), result.capabilities, result.report
+// result.recordCount, result.capabilities, result.fromCache
 ```
 
-The converter:
-1. Reads + `JSON.parse`s the input, validates against RFC 7946 (`GeojsonSpecValidator`).
-2. Writes one row per feature into a `features` table.
-3. Seals the DB with `meta.qualitySeal = 'sqlite-geojson'` (only when there are no errors and no warnings).
-4. Writes via a temporary `.new` file and an atomic swap.
+The store:
+1. Validates the URL is HTTPS (else it throws — no silent default).
+2. Fetches the COMPLETE GeoJSON document in a single request.
+3. Parses and validates on load against RFC 7946 (`GeojsonSpecValidator`) — this
+   replaces the former quality seal. Invalid GeoJSON aborts the load.
+4. Reduces every feature to a flat row and holds the rows in memory keyed by URL
+   (24 h TTL). There is no `.db` file and no on-disk artifact.
 
 ### Representative point (NO SILENT DEFAULT)
 
-`nearPoint` needs a single point per feature. Non-Point geometries are reduced by an **explicit, documented** rule (`GeometryReducer`) — never silently "first coordinate":
+`nearPoint` needs a single point per feature. Non-Point geometries are reduced by
+an **explicit, documented** rule (`GeometryReducer`) — never silently "first
+coordinate":
 
 | Geometry | Representative point |
 |----------|----------------------|
@@ -51,38 +61,60 @@ The converter:
 | Polygon | centroid of the outer ring (closing vertex excluded) |
 | MultiPolygon | centroid of the outer ring of the first part |
 
-The applied rule is stored per row in `features.representative_rule` and the full mapping in `meta.representativePointRules`. The bounding box always spans every coordinate, so `featuresInBBox` stays exact regardless of the representative point.
+The applied rule is stored per row in `representative_rule`. The bounding box
+always spans every coordinate, so `featuresInBBox` stays exact regardless of the
+representative point.
 
 ## Query
 
-The query engine follows the verified `opsd` pattern (load + in-process cache + filter, haversine in km internally, radius in **meters** at the API):
+The query engine reads the in-memory rows and serves three queries (Haversine in
+km internally, radius in **meters** at the API):
 
 ```javascript
 import { GeojsonDefaultMethods } from 'geojson-sqlite-toolkit'
 
-GeojsonDefaultMethods.featuresInBBox( { dbPath, minLon, minLat, maxLon, maxLat, limit } )
-GeojsonDefaultMethods.nearPoint( { dbPath, lat, lon, radiusMeters, limit } )   // sorted by distance, distanceM in output
-GeojsonDefaultMethods.byType( { dbPath, geomType, propertyKey, propertyValue, limit } )
+GeojsonDefaultMethods.featuresInBBox( { url, minLon, minLat, maxLon, maxLat, limit } )
+GeojsonDefaultMethods.nearPoint( { url, lat, lon, radiusMeters, limit } )   // sorted by distance, distanceM in output
+GeojsonDefaultMethods.byType( { url, geomType, propertyKey, propertyValue, limit } )
 ```
+
+A fix in the add-on propagates to every schema that uses it — there is one
+central implementation, not a per-file copy.
 
 ## FlowMCP integration
 
 ```javascript
 import { FlowMcpAdapter } from 'geojson-sqlite-toolkit'
 
-FlowMcpAdapter.verifySeal( { dbPath } )
-// -> { sealed: true, meta } | { sealed: false, meta: null, reason: 'NO_SEAL' | 'NO_META' | 'DB_UNREADABLE' }
+await FlowMcpAdapter.loadFromUrl( { url } )
+// -> { loaded: true, url, capabilities, recordCount, fromCache }
 
-FlowMcpAdapter.getAvailableMethods( { dbPath } )
+FlowMcpAdapter.getAvailableMethods( { url } )
 // -> { methods, capabilities } (capability-filtered)
 
-FlowMcpAdapter.buildToolDefinitions( { dbPath, namespace: 'mygeo' } )
+FlowMcpAdapter.buildToolDefinitions( { url, namespace: 'mygeo' } )
 // -> { tools } with names prefixed 'mygeo.' and valid inputSchema
+
+FlowMcpAdapter.executeMethod( { url, method: 'nearPoint', params: { lat, lon, radiusMeters } } )
+// -> rows from the in-memory store
 ```
+
+### Auto-Tools
+
+`buildToolDefinitions` emits the following tools, subject to the loaded file's
+capability matrix:
+
+- `featuresInBBox` — features within a latitude/longitude bounding box (requires `spatialQuery`)
+- `nearPoint` — features near a coordinate, Haversine-sorted (requires `spatialQuery`)
+- `byType` — features filtered by geometry type and/or a property key/value (requires `typeFilter`)
+
+Tool names are prefixed with the schema namespace (e.g. `mygeo.nearPoint`). When
+a capability is missing, the corresponding tool is omitted.
 
 ### Schema auto-inject contract
 
-A FlowMCP schema declares the sealed DB as a `sqlite-geojson` resource. The CLI resolves the add-on and injects the tools:
+A FlowMCP schema declares a thin URL add-on resource. The CLI resolves the
+add-on, calls `loadFromUrl`, and injects the tools:
 
 ```javascript
 export const schema = {
@@ -93,8 +125,8 @@ export const schema = {
         resources: [
             {
                 source:       'sqlite-geojson',
-                mode:         'file-based',
-                path:         '${FLOWMCP_RESOURCES}/my-features.db',
+                mode:         'url',
+                url:          'https://example.org/features.geojson',
                 addon:        'geojson-sqlite-toolkit',
                 addonVersion: '>=0.1.0',
                 addonSource:  'github:FlowMCP/geojson-sqlite-toolkit'
@@ -105,19 +137,55 @@ export const schema = {
 }
 ```
 
-`${FLOWMCP_RESOURCES}` resolves to `~/.flowmcp/resources/`. Provider data never lives in this repo.
+Provider GeoJSON data is never shipped in this repository — the schema points at
+the provider's own HTTPS URL. There are no API keys, because there is no API.
+
+## Scope (Memo 090 K3)
+
+The add-on targets **complete, single-step-downloadable static GeoJSON** — one
+HTTPS request returns the whole FeatureCollection. Paginated or query-per-page
+sources (e.g. WFS) are **out of scope**: a single `loadFromUrl` could not fetch
+them in one request.
+
+## Error Codes
+
+The URL-mode load path uses the `GJSON-URL-NNN` scheme:
+
+| Code | Meaning |
+|------|---------|
+| `GJSON-URL-001` | `url` missing, not a string, or not HTTPS |
+| `GJSON-URL-002` | fetch failed (network error or non-2xx) |
+| `GJSON-URL-003` | validate-on-load: response is not valid JSON / not valid GeoJSON / no reducible features |
+| `GJSON-URL-004` | query/accessor called for a URL that was never loaded |
+
+## Capability Matrix
+
+| Capability | Trigger |
+|------------|---------|
+| `spatialQuery` | at least one feature with a representative point |
+| `typeFilter` | at least one feature with a geometry type or property |
+
+## Provider Data Policy
+
+Provider GeoJSON datasets carry individual licenses and are **never** shipped in
+this repo. Only the synthetic CC0 fixture under
+`tests/fixtures/synthetic-geojson/` is included. A pre-push guard
+(`scripts/check-no-provider-data.sh`) flags any other `.geojson`/`.json` to
+prevent accidental redistribution of third-party data.
 
 ## Tests
 
 ```bash
+git clone https://github.com/FlowMCP/geojson-sqlite-toolkit
+cd geojson-sqlite-toolkit
 npm install
-npm test                 # jest unit + integration
+npm test                 # jest unit suites (stubbed fetch, no live network)
 npm run test:coverage:src
 npm run test:manual      # POC against a local (non-committed) GeoJSON file
 ```
 
-A CC0 synthetic fixture (`tests/fixtures/synthetic-geojson/`) is the only geodata in this repo. A pre-push guard (`scripts/check-no-provider-data.sh`) flags any other `.geojson`/`.json`/`.db` to prevent accidental redistribution of third-party data.
-
 ## License
 
 MIT — see [LICENSE](./LICENSE). The synthetic fixture is CC0.
+</content>
+</invoke>

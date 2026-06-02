@@ -1,14 +1,9 @@
 import { describe, test, expect, beforeAll, afterAll } from '@jest/globals'
-import { GeojsonSqliteConverter } from '../../src/GeojsonSqliteConverter.mjs'
 import { GeojsonDefaultMethods } from '../../src/converters/geojson/GeojsonDefaultMethods.mjs'
-import { mkdtempSync, rmSync, existsSync } from 'node:fs'
-import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { GeojsonUrlStore } from '../../src/converters/geojson/GeojsonUrlStore.mjs'
 
 
-let tmpDir = null
-let dbPath = null
-
+const URL = 'https://example.org/engine.geojson'
 
 const collection = {
     type: 'FeatureCollection',
@@ -22,30 +17,31 @@ const collection = {
 }
 
 
+let originalFetch = null
+
+
 beforeAll( async () => {
-    tmpDir = mkdtempSync( join( tmpdir(), 'geojson-engine-' ) )
-    dbPath = join( tmpDir, 'engine.db' )
-    GeojsonDefaultMethods.clearCache()
-    const result = await GeojsonSqliteConverter.start( {
-        input: Buffer.from( JSON.stringify( collection ) ), inputType: 'buffer', dbPath
+    originalFetch = global.fetch
+    global.fetch = async () => ( {
+        ok: true,
+        status: 200,
+        text: async () => JSON.stringify( collection )
     } )
-    if( !result.status ) { throw new Error( 'engine fixture build failed' ) }
+    GeojsonDefaultMethods.clearCache()
+    await GeojsonUrlStore.loadFromUrl( { url: URL } )
 } )
 
 
 afterAll( () => {
     GeojsonDefaultMethods.clearCache()
-    if( tmpDir && existsSync( tmpDir ) ) {
-        rmSync( tmpDir, { recursive: true, force: true } )
-        tmpDir = null
-    }
+    global.fetch = originalFetch
 } )
 
 
 describe( 'GeojsonDefaultMethods.featuresInBBox', () => {
     test( 'enclosing bbox returns the near cluster (>= 1)', () => {
         const { features, matchCount } = GeojsonDefaultMethods.featuresInBBox( {
-            dbPath, minLon: 9.9, minLat: 49.9, maxLon: 10.2, maxLat: 50.2
+            url: URL, minLon: 9.9, minLat: 49.9, maxLon: 10.2, maxLat: 50.2
         } )
         expect( matchCount ).toBeGreaterThanOrEqual( 1 )
         const geomTypes = new Set( features.map( ( f ) => f.geom_type ) )
@@ -55,7 +51,7 @@ describe( 'GeojsonDefaultMethods.featuresInBBox', () => {
 
     test( 'disjoint bbox returns 0', () => {
         const { matchCount } = GeojsonDefaultMethods.featuresInBBox( {
-            dbPath, minLon: 100, minLat: 80, maxLon: 110, maxLat: 85
+            url: URL, minLon: 100, minLat: 80, maxLon: 110, maxLat: 85
         } )
         expect( matchCount ).toBe( 0 )
     } )
@@ -65,7 +61,7 @@ describe( 'GeojsonDefaultMethods.featuresInBBox', () => {
 describe( 'GeojsonDefaultMethods.nearPoint', () => {
     test( 'tiny radius around Alpha returns only Alpha, distance in meters', () => {
         const { features } = GeojsonDefaultMethods.nearPoint( {
-            dbPath, lat: 50.0, lon: 10.0, radiusMeters: 50
+            url: URL, lat: 50.0, lon: 10.0, radiusMeters: 50
         } )
         expect( features.length ).toBe( 1 )
         expect( features[ 0 ].properties.name ).toBe( 'Alpha' )
@@ -75,7 +71,7 @@ describe( 'GeojsonDefaultMethods.nearPoint', () => {
 
     test( 'larger radius returns the cluster sorted ascending by distance', () => {
         const { features } = GeojsonDefaultMethods.nearPoint( {
-            dbPath, lat: 50.0, lon: 10.0, radiusMeters: 5000
+            url: URL, lat: 50.0, lon: 10.0, radiusMeters: 5000
         } )
         expect( features.length ).toBeGreaterThanOrEqual( 2 )
         const distances = features.map( ( f ) => f.distanceM )
@@ -86,7 +82,7 @@ describe( 'GeojsonDefaultMethods.nearPoint', () => {
 
     test( 'far point returns nothing within a small radius', () => {
         const { matchCount } = GeojsonDefaultMethods.nearPoint( {
-            dbPath, lat: 0, lon: 0, radiusMeters: 100
+            url: URL, lat: 0, lon: 0, radiusMeters: 100
         } )
         expect( matchCount ).toBe( 0 )
     } )
@@ -95,7 +91,7 @@ describe( 'GeojsonDefaultMethods.nearPoint', () => {
 
 describe( 'GeojsonDefaultMethods.byType', () => {
     test( 'geomType Point returns only point features', () => {
-        const { features } = GeojsonDefaultMethods.byType( { dbPath, geomType: 'Point' } )
+        const { features } = GeojsonDefaultMethods.byType( { url: URL, geomType: 'Point' } )
         expect( features.length ).toBe( 3 )
         features.forEach( ( f ) => expect( f.geom_type ).toBe( 'Point' ) )
     } )
@@ -103,14 +99,14 @@ describe( 'GeojsonDefaultMethods.byType', () => {
 
     test( 'property filter matches category', () => {
         const { features } = GeojsonDefaultMethods.byType( {
-            dbPath, propertyKey: 'category', propertyValue: 'poi'
+            url: URL, propertyKey: 'category', propertyValue: 'poi'
         } )
         expect( features.length ).toBe( 2 )
     } )
 
 
     test( 'no filter returns all features', () => {
-        const { matchCount } = GeojsonDefaultMethods.byType( { dbPath } )
+        const { matchCount } = GeojsonDefaultMethods.byType( { url: URL } )
         expect( matchCount ).toBe( 5 )
     } )
 } )
@@ -128,5 +124,13 @@ describe( 'GeojsonDefaultMethods catalog', () => {
 
     test( 'getMethodByName throws for unknown', () => {
         expect( () => GeojsonDefaultMethods.getMethodByName( { name: 'nope' } ) ).toThrow( /Unknown method/ )
+    } )
+} )
+
+
+describe( 'GeojsonDefaultMethods requires a loaded url', () => {
+    test( 'querying an unloaded url throws GJSON-URL-004', () => {
+        expect( () => GeojsonDefaultMethods.byType( { url: 'https://example.org/never-loaded.geojson' } ) )
+            .toThrow( /GJSON-URL-004/ )
     } )
 } )

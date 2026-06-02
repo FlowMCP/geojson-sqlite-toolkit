@@ -2,7 +2,7 @@
     "name": "geojson-sqlite-toolkit",
     "version": "0.1.0",
     "type": "module",
-    "description": "Convert GeoJSON FeatureCollections (RFC 7946) to queryable SQLite with quality seal and reusable spatial queries",
+    "description": "FlowMCP add-on: fetch a complete GeoJSON FeatureCollection (RFC 7946) by URL, hold it in memory, and query it with reusable spatial methods (featuresInBBox, nearPoint, byType)",
     "main": "src/index.mjs",
     "license": "MIT",
     "author": "FlowMCP",
@@ -22,12 +22,8 @@
         "test:coverage:src": "node --experimental-vm-modules node_modules/jest/bin/jest.js --coverage --passWithNoTests",
         "test:manual": "node tests/manual/run-all.mjs"
     },
-    "peerDependencies": {
-        "better-sqlite3": "^11.10.0 || ^12.0.0"
-    },
     "devDependencies": {
         "@types/node": "^22.10.0",
-        "better-sqlite3": "^11.10.0",
         "jest": "^30.0.0"
     }
 }

@@ -1,15 +1,9 @@
-import { describe, test, expect, beforeAll, afterAll } from '@jest/globals'
-import { GeojsonSqliteConverter } from '../../src/GeojsonSqliteConverter.mjs'
+import { describe, test, expect, beforeAll, afterEach, afterAll } from '@jest/globals'
 import { FlowMcpAdapter } from '../../src/adapters/FlowMcpAdapter.mjs'
-import Database from 'better-sqlite3'
-import { mkdtempSync, rmSync, existsSync } from 'node:fs'
-import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { GeojsonUrlStore } from '../../src/converters/geojson/GeojsonUrlStore.mjs'
 
 
-let tmpDir = null
-let sealedDbPath = null
-
+const URL = 'https://example.org/sealed.geojson'
 
 const collection = {
     type: 'FeatureCollection',
@@ -20,83 +14,76 @@ const collection = {
 }
 
 
-beforeAll( async () => {
-    tmpDir = mkdtempSync( join( tmpdir(), 'geojson-adapter-' ) )
-    sealedDbPath = join( tmpDir, 'sealed.db' )
-    const result = await GeojsonSqliteConverter.start( {
-        input: Buffer.from( JSON.stringify( collection ) ), inputType: 'buffer', dbPath: sealedDbPath
+let originalFetch = null
+
+
+function mockFetch( { ok = true, status = 200, body } ) {
+    global.fetch = async () => ( {
+        ok,
+        status,
+        text: async () => ( typeof body === 'string' ? body : JSON.stringify( body ) )
     } )
-    if( !result.status ) { throw new Error( 'adapter fixture build failed' ) }
+}
+
+
+beforeAll( async () => {
+    originalFetch = global.fetch
+    mockFetch( { body: collection } )
+    GeojsonUrlStore.clear()
+    await FlowMcpAdapter.loadFromUrl( { url: URL } )
+} )
+
+
+afterEach( () => {
+    mockFetch( { body: collection } )
 } )
 
 
 afterAll( () => {
-    if( tmpDir && existsSync( tmpDir ) ) {
-        rmSync( tmpDir, { recursive: true, force: true } )
-        tmpDir = null
-    }
+    GeojsonUrlStore.clear()
+    global.fetch = originalFetch
 } )
 
 
-function createNoSealDb( { fileName } ) {
-    const dbPath = join( tmpDir, fileName )
-    const db = new Database( dbPath )
-    db.exec( 'CREATE TABLE meta( key TEXT PRIMARY KEY, value TEXT )' )
-    db.prepare( 'INSERT INTO meta( key, value ) VALUES( ?, ? )' ).run( 'buildDate', '2026-06-02T00:00:00Z' )
-    db.close()
-    return dbPath
-}
-
-
-function createNoMetaDb( { fileName } ) {
-    const dbPath = join( tmpDir, fileName )
-    const db = new Database( dbPath )
-    db.exec( 'CREATE TABLE features( feature_id INTEGER )' )
-    db.close()
-    return dbPath
-}
-
-
-describe( 'FlowMcpAdapter.verifySeal', () => {
-    test( 'sealed DB returns sealed=true with qualitySeal sqlite-geojson', () => {
-        const result = FlowMcpAdapter.verifySeal( { dbPath: sealedDbPath } )
-        expect( result.sealed ).toBe( true )
-        expect( result.meta.qualitySeal ).toBe( 'sqlite-geojson' )
-        expect( result.reason ).toBeUndefined()
+describe( 'FlowMcpAdapter.loadFromUrl', () => {
+    test( 'loads a complete GeoJSON in one request and reports capabilities', async () => {
+        GeojsonUrlStore.clear()
+        const result = await FlowMcpAdapter.loadFromUrl( { url: URL } )
+        expect( result.loaded ).toBe( true )
+        expect( result.recordCount ).toBe( 2 )
+        expect( result.capabilities.spatialQuery ).toBe( true )
     } )
 
 
-    test( 'DB with meta but wrong/no seal returns NO_SEAL', () => {
-        const result = FlowMcpAdapter.verifySeal( { dbPath: createNoSealDb( { fileName: 'no-seal.db' } ) } )
-        expect( result.sealed ).toBe( false )
-        expect( result.reason ).toBe( 'NO_SEAL' )
+    test( 'rejects non-HTTPS url (no silent skip)', async () => {
+        await expect( FlowMcpAdapter.loadFromUrl( { url: 'http://example.org/x.geojson' } ) )
+            .rejects.toThrow( /HTTPS|GJSON-URL-001/ )
     } )
 
 
-    test( 'DB without meta table returns NO_META', () => {
-        const result = FlowMcpAdapter.verifySeal( { dbPath: createNoMetaDb( { fileName: 'no-meta.db' } ) } )
-        expect( result.sealed ).toBe( false )
-        expect( result.reason ).toBe( 'NO_META' )
+    test( 'invalid GeoJSON is rejected on load (F6, replaces verifySeal)', async () => {
+        mockFetch( { body: '{ not json' } )
+        GeojsonUrlStore.clear()
+        await expect( FlowMcpAdapter.loadFromUrl( { url: 'https://example.org/bad.geojson' } ) )
+            .rejects.toThrow( /GJSON-URL-003/ )
     } )
 
 
-    test( 'missing file returns DB_UNREADABLE', () => {
-        const result = FlowMcpAdapter.verifySeal( { dbPath: join( tmpDir, 'nope', 'missing.db' ) } )
-        expect( result.sealed ).toBe( false )
-        expect( result.reason ).toBe( 'DB_UNREADABLE' )
-    } )
-
-
-    test( 'invalid dbPath throws', () => {
-        expect( () => FlowMcpAdapter.verifySeal( { dbPath: '' } ) ).toThrow()
-        expect( () => FlowMcpAdapter.verifySeal( { dbPath: 123 } ) ).toThrow()
+    test( 'fetch failure (HTTP error) is surfaced, not silently skipped', async () => {
+        mockFetch( { ok: false, status: 503, body: '' } )
+        GeojsonUrlStore.clear()
+        await expect( FlowMcpAdapter.loadFromUrl( { url: 'https://example.org/down.geojson' } ) )
+            .rejects.toThrow( /GJSON-URL-002/ )
     } )
 } )
 
 
 describe( 'FlowMcpAdapter.getAvailableMethods', () => {
-    test( 'returns the three spatial methods for sealed DB', () => {
-        const { methods, capabilities } = FlowMcpAdapter.getAvailableMethods( { dbPath: sealedDbPath } )
+    test( 'returns the three spatial methods for a loaded url', async () => {
+        mockFetch( { body: collection } )
+        GeojsonUrlStore.clear()
+        await FlowMcpAdapter.loadFromUrl( { url: URL } )
+        const { methods, capabilities } = FlowMcpAdapter.getAvailableMethods( { url: URL } )
         const names = methods.map( ( m ) => m.name ).sort()
         expect( names ).toEqual( [ 'byType', 'featuresInBBox', 'nearPoint' ] )
         expect( capabilities.spatialQuery ).toBe( true )
@@ -105,8 +92,11 @@ describe( 'FlowMcpAdapter.getAvailableMethods', () => {
 
 
 describe( 'FlowMcpAdapter.buildToolDefinitions', () => {
-    test( 'tools are namespace-prefixed with valid inputSchema', () => {
-        const { tools } = FlowMcpAdapter.buildToolDefinitions( { dbPath: sealedDbPath, namespace: 'mygeo' } )
+    test( 'tools are namespace-prefixed with valid inputSchema', async () => {
+        mockFetch( { body: collection } )
+        GeojsonUrlStore.clear()
+        await FlowMcpAdapter.loadFromUrl( { url: URL } )
+        const { tools } = FlowMcpAdapter.buildToolDefinitions( { url: URL, namespace: 'mygeo' } )
         expect( tools.length ).toBe( 3 )
         const names = tools.map( ( t ) => t.name )
         expect( names ).toContain( 'mygeo.featuresInBBox' )
@@ -116,11 +106,12 @@ describe( 'FlowMcpAdapter.buildToolDefinitions', () => {
             expect( tool.inputSchema.type ).toBe( 'object' )
             expect( typeof tool.inputSchema.properties ).toBe( 'object' )
             expect( Array.isArray( tool.inputSchema.required ) ).toBe( true )
+            expect( typeof tool.method ).toBe( 'string' )
         } )
     } )
 
 
     test( 'invalid namespace rejected', () => {
-        expect( () => FlowMcpAdapter.buildToolDefinitions( { dbPath: sealedDbPath, namespace: 'Bad Name' } ) ).toThrow()
+        expect( () => FlowMcpAdapter.buildToolDefinitions( { url: URL, namespace: 'Bad Name' } ) ).toThrow()
     } )
 } )

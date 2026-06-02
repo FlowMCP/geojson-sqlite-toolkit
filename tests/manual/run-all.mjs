@@ -1,4 +1,5 @@
-import { GeojsonSqliteConverter, FlowMcpAdapter, GeojsonDefaultMethods } from '../../src/index.mjs'
+import { FlowMcpAdapter, GeojsonDefaultMethods } from '../../src/index.mjs'
+import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import path from 'node:path'
 
@@ -8,46 +9,41 @@ const __dirname = path.dirname( __filename )
 
 
 //
-// Manual POC runner. Point INPUT at a LOCAL GeoJSON file you keep OUTSIDE the
-// repo (e.g. under tests/manual/data/, which is gitignored). Never commit
-// third-party geodata. Falls back to the CC0 synthetic fixture when no
-// argument is given.
+// Manual POC runner (URL mode — Memo 096). Point the argument at a LOCAL
+// GeoJSON file you keep OUTSIDE the repo. Never commit third-party geodata.
+// The file is read locally and served through a stubbed fetch so the URL
+// pipeline (fetch -> parse -> validate-on-load -> in-memory) runs end to end
+// without a network. Falls back to the CC0 synthetic fixture.
 //
 
 async function main() {
     const arg = process.argv[ 2 ]
-    const input = arg
+    const file = arg
         ? path.resolve( arg )
         : path.join( __dirname, '..', 'fixtures', 'synthetic-geojson', 'source', 'sample.geojson' )
-    const dbPath = path.join( __dirname, 'data', 'manual-geojson.db' )
+    const url = 'https://example.org/manual-geojson.geojson'
 
-    console.log( '[run-all] input:', input )
-    console.log( '[run-all] dbPath:', dbPath )
+    console.log( '[run-all] file:', file )
+    console.log( '[run-all] url :', url )
 
-    const result = await GeojsonSqliteConverter.start( {
-        input,
-        inputType: 'geojson',
-        dbPath,
-        force: false,
-        sourceUrl: null
-    } )
+    const body = readFileSync( file, 'utf-8' )
+    global.fetch = async () => ( { ok: true, status: 200, text: async () => body } )
 
-    console.log( '[run-all] status:', result.status, 'seal:', result.seal )
-    if( !result.status ) {
-        console.error( '[run-all] aborted:', JSON.stringify( result.report, null, 2 ) )
-        process.exit( 1 )
-    }
+    const loaded = await FlowMcpAdapter.loadFromUrl( { url } )
+    console.log( '[run-all] loaded:', loaded.loaded, 'records:', loaded.recordCount, 'capabilities:', loaded.capabilities )
 
-    const { sealed, meta } = FlowMcpAdapter.verifySeal( { dbPath } )
-    console.log( '[run-all] sealed:', sealed, 'features:', meta.rowCounts )
-
-    const { tools } = FlowMcpAdapter.buildToolDefinitions( { dbPath, namespace: 'mygeo' } )
+    const { tools } = FlowMcpAdapter.buildToolDefinitions( { url, namespace: 'mygeo' } )
     console.log( '[run-all] tools:', tools.map( ( t ) => t.name ) )
 
     const bbox = GeojsonDefaultMethods.featuresInBBox( {
-        dbPath, minLon: 9.9, minLat: 49.9, maxLon: 10.2, maxLat: 50.2, limit: 100
+        url, minLon: 9.9, minLat: 49.9, maxLon: 10.2, maxLat: 50.2, limit: 100
     } )
     console.log( '[run-all] featuresInBBox matchCount:', bbox.matchCount )
+
+    const near = GeojsonDefaultMethods.nearPoint( {
+        url, lat: 50.0, lon: 10.0, radiusMeters: 5000, limit: 50
+    } )
+    console.log( '[run-all] nearPoint matchCount:', near.matchCount )
 
     process.exit( 0 )
 }

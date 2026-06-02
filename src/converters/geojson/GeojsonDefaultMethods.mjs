@@ -1,25 +1,24 @@
-import { SqliteBuilder } from '../../shared/SqliteBuilder.mjs'
+import { GeojsonUrlStore } from './GeojsonUrlStore.mjs'
 
 
 //
 // GeojsonDefaultMethods
 // ---------------------
-// SQL-template catalog (analog ScheduleDefaultMethods) PLUS an in-process
-// query engine following the verified opsd pattern (load + cache + filter,
-// haversine in km). Three methods:
+// Method catalog PLUS an in-process query engine that runs over the IN-MEMORY
+// rows held by GeojsonUrlStore (Memo 096 — URL mode, no SQLite). Three methods:
 //
-//   featuresInBBox -> column bbox overlap (always correct; R*Tree optional)
+//   featuresInBBox -> bbox overlap on the representative point bounds
 //   nearPoint      -> haversine distance, radius in METERS, sorted ascending
 //   byType         -> filter by geom_type and/or a properties key/value
 //
-// Cache is keyed by dbPath. Mirrors opsd `_cache = { data, timestamp, ttl }`.
+// Rows are loaded and cached by GeojsonUrlStore (keyed by url). The algorithms
+// here operate on plain row arrays and are source-agnostic.
 //
 
 const METHOD_CATALOG = [
     {
         name: 'featuresInBBox',
         requiresCapabilities: [ 'spatialQuery' ],
-        sqlTemplate: 'SELECT feature_id, geom_type, lat, lon, properties FROM features WHERE bbox_max_lon >= :minLon AND bbox_min_lon <= :maxLon AND bbox_max_lat >= :minLat AND bbox_min_lat <= :maxLat LIMIT :limit',
         params: {
             minLon: { type: 'number',  required: true,  description: 'West bound (WGS84 longitude)' },
             minLat: { type: 'number',  required: true,  description: 'South bound (WGS84 latitude)' },
@@ -44,7 +43,6 @@ const METHOD_CATALOG = [
     {
         name: 'nearPoint',
         requiresCapabilities: [ 'spatialQuery' ],
-        sqlTemplate: 'SELECT feature_id, geom_type, lat, lon, properties FROM features',
         params: {
             lat:          { type: 'number',  required: true,  description: 'Center latitude (WGS84)' },
             lon:          { type: 'number',  required: true,  description: 'Center longitude (WGS84)' },
@@ -69,7 +67,6 @@ const METHOD_CATALOG = [
     {
         name: 'byType',
         requiresCapabilities: [ 'typeFilter' ],
-        sqlTemplate: 'SELECT feature_id, geom_type, lat, lon, properties FROM features WHERE ( :geomType IS NULL OR geom_type = :geomType ) LIMIT :limit',
         params: {
             geomType:      { type: 'string',  required: false, description: 'Geometry type filter (Point, LineString, Polygon, ...)' },
             propertyKey:   { type: 'string',  required: false, description: 'Property key to filter on' },
@@ -91,10 +88,6 @@ const METHOD_CATALOG = [
         }
     }
 ]
-
-
-const _cacheByDbPath = new Map()
-const CACHE_TTL_MS = 86400000
 
 
 export class GeojsonDefaultMethods {
@@ -122,12 +115,12 @@ export class GeojsonDefaultMethods {
 
 
     static clearCache() {
-        _cacheByDbPath.clear()
+        GeojsonUrlStore.clear()
     }
 
 
-    static featuresInBBox( { dbPath, minLon, minLat, maxLon, maxLat, limit = 100 } ) {
-        const { features } = GeojsonDefaultMethods.#loadFeatures( { dbPath } )
+    static featuresInBBox( { url, minLon, minLat, maxLon, maxLat, limit = 100 } ) {
+        const { features } = GeojsonDefaultMethods.#loadFeatures( { url } )
         const matched = features
             .filter( ( feature ) => {
                 const overlaps = feature.bbox_max_lon >= minLon
@@ -142,8 +135,8 @@ export class GeojsonDefaultMethods {
     }
 
 
-    static nearPoint( { dbPath, lat, lon, radiusMeters, limit = 50 } ) {
-        const { features } = GeojsonDefaultMethods.#loadFeatures( { dbPath } )
+    static nearPoint( { url, lat, lon, radiusMeters, limit = 50 } ) {
+        const { features } = GeojsonDefaultMethods.#loadFeatures( { url } )
         const withDistance = features
             .map( ( feature ) => {
                 const distanceM = GeojsonDefaultMethods.#haversineKm( {
@@ -163,8 +156,8 @@ export class GeojsonDefaultMethods {
     }
 
 
-    static byType( { dbPath, geomType = null, propertyKey = null, propertyValue = null, limit = 100 } ) {
-        const { features } = GeojsonDefaultMethods.#loadFeatures( { dbPath } )
+    static byType( { url, geomType = null, propertyKey = null, propertyValue = null, limit = 100 } ) {
+        const { features } = GeojsonDefaultMethods.#loadFeatures( { url } )
         const matched = features
             .filter( ( feature ) => {
                 if( geomType !== null && feature.geom_type !== geomType ) { return false }
@@ -181,19 +174,8 @@ export class GeojsonDefaultMethods {
     }
 
 
-    static #loadFeatures( { dbPath } ) {
-        const now = Date.now()
-        const cached = _cacheByDbPath.get( dbPath )
-        if( cached && ( now - cached.timestamp ) < CACHE_TTL_MS ) {
-            return { features: cached.data, fromCache: true }
-        }
-
-        const { db } = SqliteBuilder.openDatabase( { dbPath } )
-        const rows = db.prepare( 'SELECT * FROM features' ).all()
-        db.close()
-
-        _cacheByDbPath.set( dbPath, { data: rows, timestamp: now } )
-        return { features: rows, fromCache: false }
+    static #loadFeatures( { url } ) {
+        return GeojsonUrlStore.getFeatures( { url } )
     }
 
 
