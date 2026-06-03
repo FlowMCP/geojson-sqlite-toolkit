@@ -1,6 +1,6 @@
 {
     "name": "geo-geojson-toolkit",
-    "version": "1.0.0",
+    "version": "2.0.0",
     "type": "module",
     "description": "FlowMCP geo add-on (In-Memory): fetch a complete GeoJSON FeatureCollection (RFC 7946) by URL, hold it in memory, and query it with the shared geo method family (nearPoint, inBoundingBox, byType)",
     "main": "src/index.mjs",

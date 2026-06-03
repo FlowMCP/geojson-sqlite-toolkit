@@ -39,75 +39,106 @@ afterAll( () => {
 
 
 describe( 'GeojsonDefaultMethods.inBoundingBox', () => {
-    test( 'enclosing bbox returns the near cluster (>= 1)', () => {
-        const { features, matchCount } = GeojsonDefaultMethods.inBoundingBox( {
+    test( 'enclosing bbox returns a FeatureCollection with the near cluster (>= 1)', () => {
+        const fc = GeojsonDefaultMethods.inBoundingBox( {
             url: URL, minLon: 9.9, minLat: 49.9, maxLon: 10.2, maxLat: 50.2
         } )
-        expect( matchCount ).toBeGreaterThanOrEqual( 1 )
-        const geomTypes = new Set( features.map( ( f ) => f.geom_type ) )
+        expect( fc.type ).toBe( 'FeatureCollection' )
+        expect( fc.meta.source ).toBe( 'geojson' )
+        expect( fc.meta.count ).toBe( fc.features.length )
+        expect( fc.features.length ).toBeGreaterThanOrEqual( 1 )
+        const geomTypes = new Set( fc.features.map( ( f ) => f.properties.geom_type ) )
         expect( geomTypes.has( 'Point' ) ).toBe( true )
+        fc.features.forEach( ( f ) => {
+            expect( f.type ).toBe( 'Feature' )
+            expect( f.geometry.type ).toBe( 'Point' )
+            expect( Array.isArray( f.geometry.coordinates ) ).toBe( true )
+            expect( f.properties._source ).toBe( 'geojson' )
+            expect( f.properties._distanceMeters ).toBe( null )
+        } )
     } )
 
 
-    test( 'disjoint bbox returns 0', () => {
-        const { matchCount } = GeojsonDefaultMethods.inBoundingBox( {
+    test( 'coordinates are lon-first [ lon, lat ]', () => {
+        const fc = GeojsonDefaultMethods.inBoundingBox( {
+            url: URL, minLon: 19.9, minLat: 59.9, maxLon: 20.1, maxLat: 60.1
+        } )
+        const far = fc.features.find( ( f ) => f.properties.name === 'Far' )
+        expect( far ).toBeDefined()
+        expect( far.geometry.coordinates[ 0 ] ).toBe( 20.0 )
+        expect( far.geometry.coordinates[ 1 ] ).toBe( 60.0 )
+    } )
+
+
+    test( 'disjoint bbox returns an empty FeatureCollection', () => {
+        const fc = GeojsonDefaultMethods.inBoundingBox( {
             url: URL, minLon: 100, minLat: 80, maxLon: 110, maxLat: 85
         } )
-        expect( matchCount ).toBe( 0 )
+        expect( fc.type ).toBe( 'FeatureCollection' )
+        expect( fc.features.length ).toBe( 0 )
+        expect( fc.meta.count ).toBe( 0 )
     } )
 } )
 
 
 describe( 'GeojsonDefaultMethods.nearPoint', () => {
     test( 'tiny radius around Alpha returns only Alpha, distance in meters', () => {
-        const { features } = GeojsonDefaultMethods.nearPoint( {
+        const fc = GeojsonDefaultMethods.nearPoint( {
             url: URL, lat: 50.0, lon: 10.0, radiusMeters: 50
         } )
-        expect( features.length ).toBe( 1 )
-        expect( features[ 0 ].properties.name ).toBe( 'Alpha' )
-        expect( features[ 0 ].distanceM ).toBeLessThan( 50 )
+        expect( fc.type ).toBe( 'FeatureCollection' )
+        expect( fc.features.length ).toBe( 1 )
+        expect( fc.features[ 0 ].properties.name ).toBe( 'Alpha' )
+        expect( fc.features[ 0 ].properties._distanceMeters ).toBeLessThan( 50 )
+        expect( typeof fc.features[ 0 ].properties._distanceMeters ).toBe( 'number' )
     } )
 
 
     test( 'larger radius returns the cluster sorted ascending by distance', () => {
-        const { features } = GeojsonDefaultMethods.nearPoint( {
+        const fc = GeojsonDefaultMethods.nearPoint( {
             url: URL, lat: 50.0, lon: 10.0, radiusMeters: 5000
         } )
-        expect( features.length ).toBeGreaterThanOrEqual( 2 )
-        const distances = features.map( ( f ) => f.distanceM )
+        expect( fc.features.length ).toBeGreaterThanOrEqual( 2 )
+        const distances = fc.features.map( ( f ) => f.properties._distanceMeters )
         const sorted = [ ...distances ].sort( ( a, b ) => a - b )
         expect( distances ).toEqual( sorted )
     } )
 
 
-    test( 'far point returns nothing within a small radius', () => {
-        const { matchCount } = GeojsonDefaultMethods.nearPoint( {
+    test( 'far point returns an empty FeatureCollection within a small radius', () => {
+        const fc = GeojsonDefaultMethods.nearPoint( {
             url: URL, lat: 0, lon: 0, radiusMeters: 100
         } )
-        expect( matchCount ).toBe( 0 )
+        expect( fc.features.length ).toBe( 0 )
+        expect( fc.meta.count ).toBe( 0 )
     } )
 } )
 
 
 describe( 'GeojsonDefaultMethods.byType', () => {
     test( 'geomType Point returns only point features', () => {
-        const { features } = GeojsonDefaultMethods.byType( { url: URL, geomType: 'Point' } )
-        expect( features.length ).toBe( 3 )
-        features.forEach( ( f ) => expect( f.geom_type ).toBe( 'Point' ) )
+        const fc = GeojsonDefaultMethods.byType( { url: URL, geomType: 'Point' } )
+        expect( fc.type ).toBe( 'FeatureCollection' )
+        expect( fc.features.length ).toBe( 3 )
+        fc.features.forEach( ( f ) => {
+            expect( f.properties.geom_type ).toBe( 'Point' )
+            expect( f.properties._distanceMeters ).toBe( null )
+        } )
     } )
 
 
     test( 'property filter matches category', () => {
-        const { features } = GeojsonDefaultMethods.byType( {
+        const fc = GeojsonDefaultMethods.byType( {
             url: URL, propertyKey: 'category', propertyValue: 'poi'
         } )
-        expect( features.length ).toBe( 2 )
+        expect( fc.features.length ).toBe( 2 )
     } )
 
 
     test( 'no filter returns all features', () => {
-        const { matchCount } = GeojsonDefaultMethods.byType( { url: URL } )
-        expect( matchCount ).toBe( 5 )
+        const fc = GeojsonDefaultMethods.byType( { url: URL } )
+        expect( fc.meta.count ).toBe( 5 )
+        expect( fc.features.length ).toBe( 5 )
     } )
 } )
 

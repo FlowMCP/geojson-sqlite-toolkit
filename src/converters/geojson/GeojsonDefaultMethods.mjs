@@ -11,9 +11,52 @@ import { GeojsonUrlStore } from './GeojsonUrlStore.mjs'
 //   nearPoint      -> haversine distance, radius in METERS, sorted ascending
 //   byType         -> filter by geom_type and/or a properties key/value
 //
+// All three methods return a normalized RFC 7946 FeatureCollection (lon-first
+// coordinates) — the shared "gleicher Standard" geo output contract, matching
+// geo-overpass-toolkit. Each feature carries the canonical anchor fields inside
+// its properties: feature_id, geom_type, _source ('geojson') and _distanceMeters
+// (the haversine metres for nearPoint, null otherwise).
+//
 // Rows are loaded and cached by GeojsonUrlStore (keyed by url). The algorithms
 // here operate on plain row arrays and are source-agnostic.
 //
+
+const SOURCE = 'geojson'
+
+const FEATURE_COLLECTION_OUTPUT_SCHEMA = {
+    type: 'object',
+    properties: {
+        type: { type: 'string', enum: [ 'FeatureCollection' ] },
+        features: {
+            type: 'array',
+            items: {
+                type: 'object',
+                properties: {
+                    type:     { type: 'string', enum: [ 'Feature' ] },
+                    geometry: {
+                        type: 'object',
+                        properties: {
+                            type:        { type: 'string', enum: [ 'Point' ] },
+                            coordinates: { type: 'array', items: { type: 'number' }, description: '[ lon, lat ] (lon-first RFC 7946)' }
+                        }
+                    },
+                    properties: {
+                        type: 'object',
+                        description: 'Original feature properties plus feature_id, geom_type, _source, _distanceMeters'
+                    }
+                }
+            }
+        },
+        meta: {
+            type: 'object',
+            properties: {
+                count:  { type: 'integer', description: 'Number of features' },
+                source: { type: 'string', enum: [ 'geojson' ] }
+            }
+        }
+    }
+}
+
 
 const METHOD_CATALOG = [
     {
@@ -28,19 +71,7 @@ const METHOD_CATALOG = [
             categories: { type: 'array',   required: false, description: 'Overpass-only category ids — ignored by static add-ons' },
             limit:      { type: 'integer', required: false, default: 100, description: 'Max results' }
         },
-        outputSchema: {
-            type: 'array',
-            items: {
-                type: 'object',
-                properties: {
-                    feature_id: { type: 'integer' },
-                    geom_type:  { type: 'string' },
-                    lat:        { type: 'number' },
-                    lon:        { type: 'number' },
-                    properties: { type: 'object' }
-                }
-            }
-        }
+        outputSchema: FEATURE_COLLECTION_OUTPUT_SCHEMA
     },
     {
         name: 'nearPoint',
@@ -53,20 +84,7 @@ const METHOD_CATALOG = [
             categories:   { type: 'array',   required: false, description: 'Overpass-only category ids — ignored by static add-ons' },
             limit:        { type: 'integer', required: false, default: 50, description: 'Max results' }
         },
-        outputSchema: {
-            type: 'array',
-            items: {
-                type: 'object',
-                properties: {
-                    feature_id:  { type: 'integer' },
-                    geom_type:   { type: 'string' },
-                    lat:         { type: 'number' },
-                    lon:         { type: 'number' },
-                    distanceM:   { type: 'number' },
-                    properties:  { type: 'object' }
-                }
-            }
-        }
+        outputSchema: FEATURE_COLLECTION_OUTPUT_SCHEMA
     },
     {
         name: 'byType',
@@ -77,19 +95,7 @@ const METHOD_CATALOG = [
             propertyValue: { type: 'string',  required: false, description: 'Property value to match (string compare)' },
             limit:         { type: 'integer', required: false, default: 100, description: 'Max results' }
         },
-        outputSchema: {
-            type: 'array',
-            items: {
-                type: 'object',
-                properties: {
-                    feature_id: { type: 'integer' },
-                    geom_type:  { type: 'string' },
-                    lat:        { type: 'number' },
-                    lon:        { type: 'number' },
-                    properties: { type: 'object' }
-                }
-            }
-        }
+        outputSchema: FEATURE_COLLECTION_OUTPUT_SCHEMA
     }
 ]
 
@@ -134,29 +140,28 @@ export class GeojsonDefaultMethods {
                 return overlaps
             } )
             .slice( 0, limit )
-            .map( ( feature ) => GeojsonDefaultMethods.#toOutput( { feature } ) )
-        return { features: matched, matchCount: matched.length }
+            .map( ( feature ) => GeojsonDefaultMethods.#toFeature( { feature, distanceMeters: null } ) )
+        return GeojsonDefaultMethods.#toFeatureCollection( { features: matched } )
     }
 
 
     static nearPoint( { url, lat, lon, radiusMeters, limit = 50 } ) {
         const { features } = GeojsonDefaultMethods.#loadFeatures( { url } )
-        const withDistance = features
+        const matched = features
             .map( ( feature ) => {
-                const distanceM = GeojsonDefaultMethods.#haversineKm( {
+                const distanceMeters = GeojsonDefaultMethods.#haversineKm( {
                     lat1: lat, lon1: lon, lat2: feature.lat, lon2: feature.lon
                 } ) * 1000
-                return { feature, distanceM }
+                return { feature, distanceMeters }
             } )
-            .filter( ( entry ) => entry.distanceM <= radiusMeters )
-            .sort( ( a, b ) => a.distanceM - b.distanceM )
+            .filter( ( entry ) => entry.distanceMeters <= radiusMeters )
+            .sort( ( a, b ) => a.distanceMeters - b.distanceMeters )
             .slice( 0, limit )
             .map( ( entry ) => {
-                const out = GeojsonDefaultMethods.#toOutput( { feature: entry.feature } )
-                out.distanceM = Math.round( entry.distanceM * 10 ) / 10
-                return out
+                const distanceMeters = Math.round( entry.distanceMeters * 10 ) / 10
+                return GeojsonDefaultMethods.#toFeature( { feature: entry.feature, distanceMeters } )
             } )
-        return { features: withDistance, matchCount: withDistance.length }
+        return GeojsonDefaultMethods.#toFeatureCollection( { features: matched } )
     }
 
 
@@ -173,8 +178,8 @@ export class GeojsonDefaultMethods {
                 return true
             } )
             .slice( 0, limit )
-            .map( ( feature ) => GeojsonDefaultMethods.#toOutput( { feature } ) )
-        return { features: matched, matchCount: matched.length }
+            .map( ( feature ) => GeojsonDefaultMethods.#toFeature( { feature, distanceMeters: null } ) )
+        return GeojsonDefaultMethods.#toFeatureCollection( { features: matched } )
     }
 
 
@@ -183,13 +188,28 @@ export class GeojsonDefaultMethods {
     }
 
 
-    static #toOutput( { feature } ) {
+    static #toFeatureCollection( { features } ) {
         return {
+            type: 'FeatureCollection',
+            features,
+            meta: { count: features.length, source: SOURCE }
+        }
+    }
+
+
+    static #toFeature( { feature, distanceMeters } ) {
+        const originalProperties = GeojsonDefaultMethods.#parseProps( { feature } )
+        const properties = {
+            ...originalProperties,
             feature_id: feature.feature_id,
             geom_type: feature.geom_type,
-            lat: feature.lat,
-            lon: feature.lon,
-            properties: GeojsonDefaultMethods.#parseProps( { feature } )
+            _source: SOURCE,
+            _distanceMeters: distanceMeters
+        }
+        return {
+            type: 'Feature',
+            geometry: { type: 'Point', coordinates: [ feature.lon, feature.lat ] },
+            properties
         }
     }
 
