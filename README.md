@@ -1,18 +1,23 @@
-# geojson-sqlite-toolkit
+# geo-geojson-toolkit
 
 Load GeoJSON FeatureCollections (RFC 7946) from a URL into memory and expose
-reusable spatial queries as FlowMCP auto-tools. There is **no SQLite file** and
-**no file seal** — the complete file is fetched in a single request, validated
-on load, and held in memory (Memo 096 URL model).
+reusable spatial queries as FlowMCP auto-tools. The complete file is fetched in a
+single request, validated on load, and held in memory (Memo 096 URL model).
 
 GeoJSON is **self-describing** (RFC 7946: `FeatureCollection.features[]`,
 geometry as `[lon, lat]`, free-form `properties`), so — unlike a CSV add-on —
 this toolkit needs **no parse config**. You point it at a URL; the shape is
 already known.
 
-This is a sibling of [`csv-tsv-sqlite-toolkit`](https://github.com/FlowMCP/csv-tsv-sqlite-toolkit)
-and follows the same FlowMCP add-on pattern (own repo → thin URL schema →
-in-memory load → auto-inject via `FlowMcpAdapter`).
+This add-on is part of the FlowMCP geo add-on family (`geo-geojson-toolkit` /
+`geo-csv-tsv-toolkit` / `gtfs-sqlite-toolkit` / `geo-overpass-toolkit`). It shares
+the common geo method family — `nearPoint`, `inBoundingBox`, `byType`.
+
+## Runtime category
+
+**In-Memory** (URL model, no SQLite). The complete FeatureCollection is fetched
+in one request and held in memory keyed by URL — there is no `.db` file and no
+on-disk artifact.
 
 ## Install
 
@@ -23,13 +28,12 @@ npm install github:FlowMCP/geojson-sqlite-toolkit
 ```
 
 No native dependencies — the load path uses the global `fetch` and a pure-JS
-validator. (`better-sqlite3` is no longer required; the seal/file path was
-removed in the URL model.)
+validator. This is an In-Memory add-on; it never writes a database file.
 
 ## Load
 
 ```javascript
-import { GeojsonUrlStore } from 'geojson-sqlite-toolkit'
+import { GeojsonUrlStore } from 'geo-geojson-toolkit'
 
 const result = await GeojsonUrlStore.loadFromUrl( {
     url: 'https://example.org/features.geojson'   // HTTPS only
@@ -62,21 +66,31 @@ coordinate":
 | MultiPolygon | centroid of the outer ring of the first part |
 
 The applied rule is stored per row in `representative_rule`. The bounding box
-always spans every coordinate, so `featuresInBBox` stays exact regardless of the
+always spans every coordinate, so `inBoundingBox` stays exact regardless of the
 representative point.
 
-## Query
+## Methods
 
-The query engine reads the in-memory rows and serves three queries (Haversine in
-km internally, radius in **meters** at the API):
+The query engine reads the in-memory rows and serves the shared geo method family
+(Haversine in km internally, radius in **meters** at the API):
+
+| Method | Input | Output |
+|--------|-------|--------|
+| `nearPoint` | `{ url, lat, lon, radiusMeters, limit? }` | features near a point, distance-sorted (`distanceM` in output) |
+| `inBoundingBox` | `{ url, minLon, minLat, maxLon, maxLat, limit? }` (lon-first RFC 7946) | features overlapping the bbox |
+| `byType` | `{ url, geomType?, propertyKey?, propertyValue?, limit? }` | features filtered by geometry type and/or property |
 
 ```javascript
-import { GeojsonDefaultMethods } from 'geojson-sqlite-toolkit'
+import { GeojsonDefaultMethods } from 'geo-geojson-toolkit'
 
-GeojsonDefaultMethods.featuresInBBox( { url, minLon, minLat, maxLon, maxLat, limit } )
 GeojsonDefaultMethods.nearPoint( { url, lat, lon, radiusMeters, limit } )   // sorted by distance, distanceM in output
+GeojsonDefaultMethods.inBoundingBox( { url, minLon, minLat, maxLon, maxLat, limit } )
 GeojsonDefaultMethods.byType( { url, geomType, propertyKey, propertyValue, limit } )
 ```
+
+The optional `selection` / `categories[]` slots in the shared family are
+**Overpass-only** and are ignored by this static add-on (declared, not silently
+dropped).
 
 A fix in the add-on propagates to every schema that uses it — there is one
 central implementation, not a per-file copy.
@@ -84,7 +98,7 @@ central implementation, not a per-file copy.
 ## FlowMCP integration
 
 ```javascript
-import { FlowMcpAdapter } from 'geojson-sqlite-toolkit'
+import { FlowMcpAdapter } from 'geo-geojson-toolkit'
 
 await FlowMcpAdapter.loadFromUrl( { url } )
 // -> { loaded: true, url, capabilities, recordCount, fromCache }
@@ -104,8 +118,8 @@ FlowMcpAdapter.executeMethod( { url, method: 'nearPoint', params: { lat, lon, ra
 `buildToolDefinitions` emits the following tools, subject to the loaded file's
 capability matrix:
 
-- `featuresInBBox` — features within a latitude/longitude bounding box (requires `spatialQuery`)
 - `nearPoint` — features near a coordinate, Haversine-sorted (requires `spatialQuery`)
+- `inBoundingBox` — features within a lon-first bounding box (requires `spatialQuery`)
 - `byType` — features filtered by geometry type and/or a property key/value (requires `typeFilter`)
 
 Tool names are prefixed with the schema namespace (e.g. `mygeo.nearPoint`). When
@@ -131,11 +145,11 @@ export const schema = {
     main: {
         resources: [
             {
-                source:       'sqlite-geojson',
+                source:       'geo-geojson',
                 mode:         'url',
                 url:          'https://example.org/features.geojson',
-                addon:        'geojson-sqlite-toolkit',
-                addonVersion: '>=0.1.0',
+                addon:        'geo-geojson-toolkit',
+                addonVersion: '>=1.0.0',
                 addonSource:  'github:FlowMCP/geojson-sqlite-toolkit'
             }
         ],

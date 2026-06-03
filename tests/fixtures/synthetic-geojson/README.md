@@ -57,7 +57,7 @@ The loaded collection activates these `GeojsonCapabilityDetector` booleans:
 | MultiPolygon | centroid of the outer ring of the first part |
 
 The bounding box always spans every coordinate of the geometry, so
-`featuresInBBox` stays exact regardless of the representative point.
+`inBoundingBox` stays exact regardless of the representative point.
 
 ## Repository policy
 

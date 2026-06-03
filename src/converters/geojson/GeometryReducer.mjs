@@ -17,7 +17,7 @@
 //   MultiPolygon     -> centroid of the outer ring of the FIRST polygon part
 //
 // The bounding box is always the min/max over EVERY coordinate of the
-// geometry (all rings, all parts), so featuresInBBox stays exact regardless
+// geometry (all rings, all parts), so inBoundingBox stays exact regardless
 // of the representative point.
 //
 // Every reduction returns { lon, lat, bbox, rule } where `rule` names the

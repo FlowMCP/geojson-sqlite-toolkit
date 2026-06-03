@@ -85,7 +85,7 @@ describe( 'FlowMcpAdapter.getAvailableMethods', () => {
         await FlowMcpAdapter.loadFromUrl( { url: URL } )
         const { methods, capabilities } = FlowMcpAdapter.getAvailableMethods( { url: URL } )
         const names = methods.map( ( m ) => m.name ).sort()
-        expect( names ).toEqual( [ 'byType', 'featuresInBBox', 'nearPoint' ] )
+        expect( names ).toEqual( [ 'byType', 'inBoundingBox', 'nearPoint' ] )
         expect( capabilities.spatialQuery ).toBe( true )
     } )
 } )
@@ -99,7 +99,7 @@ describe( 'FlowMcpAdapter.buildToolDefinitions', () => {
         const { tools } = FlowMcpAdapter.buildToolDefinitions( { url: URL, namespace: 'mygeo' } )
         expect( tools.length ).toBe( 3 )
         const names = tools.map( ( t ) => t.name )
-        expect( names ).toContain( 'mygeo.featuresInBBox' )
+        expect( names ).toContain( 'mygeo.inBoundingBox' )
         expect( names ).toContain( 'mygeo.nearPoint' )
         expect( names ).toContain( 'mygeo.byType' )
         tools.forEach( ( tool ) => {

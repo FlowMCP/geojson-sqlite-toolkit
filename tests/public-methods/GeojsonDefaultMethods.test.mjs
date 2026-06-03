@@ -38,9 +38,9 @@ afterAll( () => {
 } )
 
 
-describe( 'GeojsonDefaultMethods.featuresInBBox', () => {
+describe( 'GeojsonDefaultMethods.inBoundingBox', () => {
     test( 'enclosing bbox returns the near cluster (>= 1)', () => {
-        const { features, matchCount } = GeojsonDefaultMethods.featuresInBBox( {
+        const { features, matchCount } = GeojsonDefaultMethods.inBoundingBox( {
             url: URL, minLon: 9.9, minLat: 49.9, maxLon: 10.2, maxLat: 50.2
         } )
         expect( matchCount ).toBeGreaterThanOrEqual( 1 )
@@ -50,7 +50,7 @@ describe( 'GeojsonDefaultMethods.featuresInBBox', () => {
 
 
     test( 'disjoint bbox returns 0', () => {
-        const { matchCount } = GeojsonDefaultMethods.featuresInBBox( {
+        const { matchCount } = GeojsonDefaultMethods.inBoundingBox( {
             url: URL, minLon: 100, minLat: 80, maxLon: 110, maxLat: 85
         } )
         expect( matchCount ).toBe( 0 )
@@ -115,7 +115,7 @@ describe( 'GeojsonDefaultMethods.byType', () => {
 describe( 'GeojsonDefaultMethods catalog', () => {
     test( 'getMethodsForCapabilities gates by capability', () => {
         const all = GeojsonDefaultMethods.getMethodsForCapabilities( { capabilities: { spatialQuery: true, typeFilter: true } } )
-        expect( all.map( ( m ) => m.name ).sort() ).toEqual( [ 'byType', 'featuresInBBox', 'nearPoint' ] )
+        expect( all.map( ( m ) => m.name ).sort() ).toEqual( [ 'byType', 'inBoundingBox', 'nearPoint' ] )
 
         const none = GeojsonDefaultMethods.getMethodsForCapabilities( { capabilities: {} } )
         expect( none.length ).toBe( 0 )

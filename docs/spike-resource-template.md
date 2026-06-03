@@ -74,7 +74,7 @@ All citations are from `repos/flowmcp-spec/spec/v4.3.0/`.
 
 7. **The add-on's own resource path is SQL/method-bound, not URI-template-bound.**
    `13-resources.md:393` — for add-on `mode: 'url'` sources (GeoJSON/CSV), data is held in
-   memory and "exposed through the add-on's central default methods (`featuresInBBox`,
+   memory and "exposed through the add-on's central default methods (`inBoundingBox`,
    `nearPoint`, `byType`) — not through hand-written SQL." These default methods are emitted
    as **Tools** by `src/adapters/FlowMcpAdapter.mjs` `buildToolDefinitions` (lines 46-81),
    which is exactly the current, correct behavior.
