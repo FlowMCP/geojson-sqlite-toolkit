@@ -1,8 +1,8 @@
 {
-    "name": "geojson-sqlite-toolkit",
-    "version": "0.1.0",
+    "name": "geo-geojson-toolkit",
+    "version": "1.0.0",
     "type": "module",
-    "description": "FlowMCP add-on: fetch a complete GeoJSON FeatureCollection (RFC 7946) by URL, hold it in memory, and query it with reusable spatial methods (featuresInBBox, nearPoint, byType)",
+    "description": "FlowMCP geo add-on (In-Memory): fetch a complete GeoJSON FeatureCollection (RFC 7946) by URL, hold it in memory, and query it with the shared geo method family (nearPoint, inBoundingBox, byType)",
     "main": "src/index.mjs",
     "license": "MIT",
     "author": "FlowMCP",

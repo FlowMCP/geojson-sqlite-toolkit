@@ -1,6 +1,6 @@
 # GJSON-NNN Error Codes
 
-Reference for all codes emitted by `geojson-sqlite-toolkit`. Codes are grouped by severity, signalled by the numeric range.
+Reference for all codes emitted by `geo-geojson-toolkit`. Codes are grouped by severity, signalled by the numeric range.
 
 > Codes are calibrated against [RFC 7946 — The GeoJSON Format](https://datatracker.ietf.org/doc/html/rfc7946). RFC 7946 is a stable single specification, so there is no dated snapshot mechanism (unlike the GTFS toolkit's spec-reference files).
 

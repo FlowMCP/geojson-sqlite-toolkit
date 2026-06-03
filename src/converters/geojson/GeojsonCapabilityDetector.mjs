@@ -7,7 +7,7 @@
 //
 // Capabilities (all booleans):
 //   spatialQuery  -> always true once >=1 feature has a representative point
-//                    (enables featuresInBBox + nearPoint)
+//                    (enables inBoundingBox + nearPoint)
 //   pointFeatures -> at least one Point/MultiPoint geometry present
 //   lineFeatures  -> at least one LineString/MultiLineString geometry present
 //   areaFeatures  -> at least one Polygon/MultiPolygon geometry present
