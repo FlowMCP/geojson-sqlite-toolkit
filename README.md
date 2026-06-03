@@ -76,17 +76,55 @@ The query engine reads the in-memory rows and serves the shared geo method famil
 
 | Method | Input | Output |
 |--------|-------|--------|
-| `nearPoint` | `{ url, lat, lon, radiusMeters, limit? }` | features near a point, distance-sorted (`distanceM` in output) |
-| `inBoundingBox` | `{ url, minLon, minLat, maxLon, maxLat, limit? }` (lon-first RFC 7946) | features overlapping the bbox |
-| `byType` | `{ url, geomType?, propertyKey?, propertyValue?, limit? }` | features filtered by geometry type and/or property |
+| `nearPoint` | `{ url, lat, lon, radiusMeters, limit? }` | FeatureCollection near a point, distance-sorted (`_distanceMeters` per feature) |
+| `inBoundingBox` | `{ url, minLon, minLat, maxLon, maxLat, limit? }` (lon-first RFC 7946) | FeatureCollection overlapping the bbox |
+| `byType` | `{ url, geomType?, propertyKey?, propertyValue?, limit? }` | FeatureCollection filtered by geometry type and/or property |
 
 ```javascript
 import { GeojsonDefaultMethods } from 'geo-geojson-toolkit'
 
-GeojsonDefaultMethods.nearPoint( { url, lat, lon, radiusMeters, limit } )   // sorted by distance, distanceM in output
+GeojsonDefaultMethods.nearPoint( { url, lat, lon, radiusMeters, limit } )   // sorted by distance, _distanceMeters per feature
 GeojsonDefaultMethods.inBoundingBox( { url, minLon, minLat, maxLon, maxLat, limit } )
 GeojsonDefaultMethods.byType( { url, geomType, propertyKey, propertyValue, limit } )
 ```
+
+### Output: normalized RFC 7946 FeatureCollection (v2.0.0)
+
+All three methods return the **shared geo output contract** ("gleicher Standard",
+matching `geo-overpass-toolkit`): a normalized RFC 7946 `FeatureCollection` with
+lon-first coordinates. Each feature keeps its original properties plus the
+canonical anchor fields `feature_id`, `geom_type`, `_source` and `_distanceMeters`.
+
+```jsonc
+{
+  "type": "FeatureCollection",
+  "features": [
+    {
+      "type": "Feature",
+      "geometry": { "type": "Point", "coordinates": [ 10.0, 50.0 ] },   // [ lon, lat ] — lon-first
+      "properties": {
+        // ...original feature properties...
+        "feature_id": 0,
+        "geom_type": "Point",
+        "_source": "geojson",
+        "_distanceMeters": 12.3   // number for nearPoint, null for inBoundingBox / byType
+      }
+    }
+  ],
+  "meta": { "count": 1, "source": "geojson" }
+}
+```
+
+- `nearPoint`: `_distanceMeters` is the haversine distance in metres (rounded to
+  0.1); features are sorted ascending by it and sliced to `limit`.
+- `inBoundingBox` / `byType`: `_distanceMeters` is `null`; features sliced to `limit`.
+- `meta.count` always equals `features.length`.
+
+> **Breaking change in v2.0.0** — the previous output
+> (`{ features: [ { feature_id, geom_type, lat, lon, distanceM?, properties } ], matchCount }`)
+> was replaced by the FeatureCollection above. `lat`/`lon` are now `geometry.coordinates`
+> (lon-first), `feature_id`/`geom_type` moved into `properties`, `distanceM` became
+> `properties._distanceMeters`, and `matchCount` became `meta.count`.
 
 The optional `selection` / `categories[]` slots in the shared family are
 **Overpass-only** and are ignored by this static add-on (declared, not silently

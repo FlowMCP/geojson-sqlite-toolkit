@@ -38,12 +38,13 @@ async function main() {
     const bbox = GeojsonDefaultMethods.inBoundingBox( {
         url, minLon: 9.9, minLat: 49.9, maxLon: 10.2, maxLat: 50.2, limit: 100
     } )
-    console.log( '[run-all] inBoundingBox matchCount:', bbox.matchCount )
+    console.log( '[run-all] inBoundingBox FeatureCollection meta:', bbox.meta )
 
     const near = GeojsonDefaultMethods.nearPoint( {
         url, lat: 50.0, lon: 10.0, radiusMeters: 5000, limit: 50
     } )
-    console.log( '[run-all] nearPoint matchCount:', near.matchCount )
+    console.log( '[run-all] nearPoint FeatureCollection meta:', near.meta )
+    console.log( '[run-all] nearPoint first feature:', JSON.stringify( near.features[ 0 ] ?? null ) )
 
     process.exit( 0 )
 }
