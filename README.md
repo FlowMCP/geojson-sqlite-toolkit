@@ -111,6 +111,13 @@ capability matrix:
 Tool names are prefixed with the schema namespace (e.g. `mygeo.nearPoint`). When
 a capability is missing, the corresponding tool is omitted.
 
+> **Spike note (Memo 100, PRD-013 / F5):** A spike investigated whether `nearPoint`
+> could instead be emitted as an MCP **Resource Template** (parameterized resource URI).
+> Verdict: **NICHT TRAGFÄHIG** — FlowMCP v4.3.0 defines no Resource-Template primitive
+> (resources map to MCP `server.resource` and bind to SQL `?` placeholders only). The
+> methods stay emitted as Tools. Parked, no blocker. See
+> [`docs/spike-resource-template.md`](./docs/spike-resource-template.md).
+
 ### Schema auto-inject contract
 
 A FlowMCP schema declares a thin URL add-on resource. The CLI resolves the
