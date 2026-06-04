@@ -2,7 +2,7 @@
 #
 # check-no-provider-data.sh
 # -------------------------
-# Pre-push guardrail for geojson-sqlite-toolkit (Memo 092 / PRD-G1).
+# Pre-push guardrail for geo-geojson-toolkit (Memo 092 / PRD-G1).
 #
 # Purpose:
 #   Prevents accidental commit of third-party geodata (OSM, BKG, GDI, WFS

@@ -8,12 +8,12 @@
     "author": "FlowMCP",
     "repository": {
         "type": "git",
-        "url": "git+https://github.com/FlowMCP/geojson-sqlite-toolkit.git"
+        "url": "git+https://github.com/FlowMCP/geo-geojson-toolkit.git"
     },
     "bugs": {
-        "url": "https://github.com/FlowMCP/geojson-sqlite-toolkit/issues"
+        "url": "https://github.com/FlowMCP/geo-geojson-toolkit/issues"
     },
-    "homepage": "https://github.com/FlowMCP/geojson-sqlite-toolkit#readme",
+    "homepage": "https://github.com/FlowMCP/geo-geojson-toolkit#readme",
     "engines": {
         "node": ">=22.0.0"
     },

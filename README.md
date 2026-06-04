@@ -12,7 +12,7 @@ this toolkit needs **no parse config**. You point it at a URL; the shape is
 already known.
 
 This add-on is part of the FlowMCP geo add-on family (`geo-geojson-toolkit` /
-`geo-csv-tsv-toolkit` / `gtfs-sqlite-toolkit` / `geo-overpass-toolkit`). It shares
+`geo-csv-tsv-toolkit` / `geo-gtfs-toolkit` / `geo-overpass-toolkit`). It shares
 the common geo method family — `nearPoint`, `inBoundingBox`, `byType`.
 
 ## Runtime category
@@ -26,7 +26,7 @@ on-disk artifact.
 This package is not published to npm. Use it via GitHub:
 
 ```bash
-npm install github:FlowMCP/geojson-sqlite-toolkit
+npm install github:FlowMCP/geo-geojson-toolkit
 ```
 
 No native dependencies — the load path uses the global `fetch` and a pure-JS
@@ -190,7 +190,7 @@ export const schema = {
                 url:          'https://example.org/features.geojson',
                 addon:        'geo-geojson-toolkit',
                 addonVersion: '>=1.0.0',
-                addonSource:  'github:FlowMCP/geojson-sqlite-toolkit'
+                addonSource:  'github:FlowMCP/geo-geojson-toolkit'
             }
         ],
         tools: []
@@ -237,8 +237,8 @@ prevent accidental redistribution of third-party data.
 ## Tests
 
 ```bash
-git clone https://github.com/FlowMCP/geojson-sqlite-toolkit
-cd geojson-sqlite-toolkit
+git clone https://github.com/FlowMCP/geo-geojson-toolkit
+cd geo-geojson-toolkit
 npm install
 npm test                 # jest unit suites (stubbed fetch, no live network)
 npm run test:coverage:src

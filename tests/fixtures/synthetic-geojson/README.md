@@ -1,6 +1,6 @@
 # Synthetic Mini-GeoJSON Fixture (CC0)
 
-A fully fictional GeoJSON FeatureCollection (RFC 7946) used for reproducible tests of the `geojson-sqlite-toolkit` and its FlowMCP integration. In URL mode (Memo 096) the file is served through a stubbed `fetch` and parsed into memory — there is no SQLite build artifact. No real-world geodata is included.
+A fully fictional GeoJSON FeatureCollection (RFC 7946) used for reproducible tests of the `geo-geojson-toolkit` and its FlowMCP integration. In URL mode (Memo 096) the file is served through a stubbed `fetch` and parsed into memory — there is no SQLite build artifact. No real-world geodata is included.
 
 ## Purpose
 
