@@ -1,5 +1,7 @@
 # geo-geojson-toolkit
 
+**Version:** 2.0.0
+
 Load GeoJSON FeatureCollections (RFC 7946) from a URL into memory and expose
 reusable spatial queries as FlowMCP auto-tools. The complete file is fetched in a
 single request, validated on load, and held in memory (Memo 096 URL model).
